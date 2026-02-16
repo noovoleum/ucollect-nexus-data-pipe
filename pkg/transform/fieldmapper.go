@@ -11,25 +11,25 @@ import (
 
 // FieldMapping defines how to map a single field
 type FieldMapping struct {
-	Source      string `json:"source"`       // Source field name
-	Destination string `json:"destination"`  // Destination field name
-	Format      string `json:"format"`       // Format type: "string", "int", "float", "date", "uppercase", "lowercase", "trim"
-	Default     string `json:"default"`      // Default value if source is missing or null
-	Required    bool   `json:"required"`     // If true, error if field is missing
-	Extract     string `json:"extract"`      // Regex pattern to extract from source value
+	Source      string `json:"source"`      // Source field name
+	Destination string `json:"destination"` // Destination field name
+	Format      string `json:"format"`      // Format type: "string", "int", "float", "date", "uppercase", "lowercase", "trim"
+	Default     string `json:"default"`     // Default value if source is missing or null
+	Required    bool   `json:"required"`    // If true, error if field is missing
+	Extract     string `json:"extract"`     // Regex pattern to extract from source value
 }
 
 // FieldMapperConfig contains field mapping configuration
 type FieldMapperConfig struct {
-	Mappings     []FieldMapping `json:"mappings"`
-	IncludeAll   bool           `json:"include_all"`    // Include all unmapped fields
-	ExcludeFields []string      `json:"exclude_fields"` // Fields to exclude (if include_all is true)
-	StrictMode   bool           `json:"strict_mode"`    // Fail on any mapping error
+	Mappings      []FieldMapping `json:"mappings"`
+	IncludeAll    bool           `json:"include_all"`    // Include all unmapped fields
+	ExcludeFields []string       `json:"exclude_fields"` // Fields to exclude (if include_all is true)
+	StrictMode    bool           `json:"strict_mode"`    // Fail on any mapping error
 }
 
 // FieldMapper is a transformer that maps and formats fields
 type FieldMapper struct {
-	config FieldMapperConfig
+	config     FieldMapperConfig
 	extractors map[string]*regexp.Regexp
 }
 
@@ -62,7 +62,7 @@ func (f *FieldMapper) Transform(event pipeline.Event) (pipeline.Event, error) {
 	// Apply mappings
 	for _, mapping := range f.config.Mappings {
 		value, exists := event.Data[mapping.Source]
-		
+
 		// Handle missing required fields
 		if !exists || value == nil {
 			if mapping.Required {

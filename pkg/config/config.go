@@ -16,7 +16,16 @@ type Config struct {
 
 // PipelineConfig contains pipeline-level settings
 type PipelineConfig struct {
-	Name string `json:"name"`
+	Name string     `json:"name"`
+	Sync SyncConfig `json:"sync,omitempty"`
+}
+
+// SyncConfig contains synchronization settings
+type SyncConfig struct {
+	InitialSync      bool   `json:"initial_sync"`       // Enable initial sync
+	ForceInitialSync bool   `json:"force_initial_sync"` // Force initial sync even if data exists in sink
+	TimestampField   string `json:"timestamp_field"`    // Field name to use for timestamp-based sync
+	BatchSize        int    `json:"batch_size"`         // Batch size for initial sync (default: 1000)
 }
 
 // SourceConfig contains source configuration
@@ -79,6 +88,22 @@ func (t TransformerConfig) GetString(key string) string {
 // GetBool safely retrieves a bool from settings
 func (t TransformerConfig) GetBool(key string) bool {
 	if val, ok := t.Settings[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
+// GetBool safely retrieves a bool from settings
+func (s SourceConfig) GetBool(key string) bool {
+	if val, ok := s.Settings[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
+// GetBool safely retrieves a bool from settings
+func (s SinkConfig) GetBool(key string) bool {
+	if val, ok := s.Settings[key].(bool); ok {
 		return val
 	}
 	return false

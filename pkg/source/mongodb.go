@@ -21,6 +21,14 @@ type MongoDBSource struct {
 	logger     *log.Logger
 }
 
+// InitialSyncConfig contains configuration for initial sync
+type InitialSyncConfig struct {
+	Enabled        bool
+	TimestampField string
+	FromTimestamp  interface{}
+	BatchSize      int
+}
+
 // NewMongoDBSource creates a new MongoDB source
 func NewMongoDBSource(uri, database, collection string, logger *log.Logger) *MongoDBSource {
 	if logger == nil {
@@ -147,4 +155,109 @@ func (m *MongoDBSource) Close() error {
 		return m.client.Disconnect(context.Background())
 	}
 	return nil
+}
+
+// PerformInitialSync performs initial synchronization of existing data
+func (m *MongoDBSource) PerformInitialSync(ctx context.Context, config InitialSyncConfig) (<-chan pipeline.Event, <-chan error) {
+	events := make(chan pipeline.Event)
+	errors := make(chan error)
+
+	go func() {
+		defer close(events)
+		defer close(errors)
+
+		collection := m.client.Database(m.database).Collection(m.collection)
+
+		// Build query filter
+		filter := bson.M{}
+		if config.TimestampField != "" && config.FromTimestamp != nil {
+			filter[config.TimestampField] = bson.M{"$gte": config.FromTimestamp}
+			m.logger.Printf("Starting initial sync from timestamp: %v on field: %s", config.FromTimestamp, config.TimestampField)
+		} else {
+			m.logger.Printf("Starting full initial sync for %s.%s", m.database, m.collection)
+		}
+
+		// Set batch size
+		batchSize := config.BatchSize
+		if batchSize <= 0 {
+			batchSize = 1000
+		}
+
+		// Query with cursor
+		opts := options.Find().SetBatchSize(int32(batchSize))
+		if config.TimestampField != "" {
+			// Sort by timestamp field to ensure ordered processing
+			opts.SetSort(bson.D{{Key: config.TimestampField, Value: 1}})
+		}
+
+		cursor, err := collection.Find(ctx, filter, opts)
+		if err != nil {
+			errors <- fmt.Errorf("failed to query MongoDB for initial sync: %w", err)
+			return
+		}
+		defer cursor.Close(ctx)
+
+		count := 0
+		for cursor.Next(ctx) {
+			var doc bson.M
+			if err := cursor.Decode(&doc); err != nil {
+				errors <- fmt.Errorf("failed to decode document: %w", err)
+				continue
+			}
+
+			// Convert to pipeline event
+			event := pipeline.Event{
+				ID:         fmt.Sprintf("%v", doc["_id"]),
+				Timestamp:  time.Now(),
+				Operation:  "insert", // Initial sync is treated as insert
+				Source:     "mongodb",
+				Database:   m.database,
+				Collection: m.collection,
+				Data:       convertBSONToMap(doc),
+			}
+
+			events <- event
+			count++
+
+			if count%1000 == 0 {
+				m.logger.Printf("Initial sync progress: %d documents synced", count)
+			}
+		}
+
+		if err := cursor.Err(); err != nil {
+			errors <- fmt.Errorf("cursor error during initial sync: %w", err)
+			return
+		}
+
+		m.logger.Printf("Initial sync completed: %d documents synced", count)
+	}()
+
+	return events, errors
+}
+
+// GetLatestTimestamp retrieves the latest timestamp from the collection
+func (m *MongoDBSource) GetLatestTimestamp(ctx context.Context, timestampField string) (interface{}, error) {
+	if timestampField == "" {
+		return nil, fmt.Errorf("timestamp field is required")
+	}
+
+	collection := m.client.Database(m.database).Collection(m.collection)
+
+	opts := options.FindOne().SetSort(bson.D{{Key: timestampField, Value: -1}})
+	var result bson.M
+	err := collection.FindOne(ctx, bson.M{}, opts).Decode(&result)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			// Collection is empty
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get latest timestamp: %w", err)
+	}
+
+	timestamp, ok := result[timestampField]
+	if !ok {
+		return nil, fmt.Errorf("timestamp field '%s' not found in document", timestampField)
+	}
+
+	return timestamp, nil
 }

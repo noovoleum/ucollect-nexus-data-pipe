@@ -201,3 +201,42 @@ func (p *PostgreSQLSink) Close() error {
 	}
 	return nil
 }
+
+// GetLatestTimestamp retrieves the latest timestamp from the table
+func (p *PostgreSQLSink) GetLatestTimestamp(ctx context.Context, timestampField string) (interface{}, error) {
+	if timestampField == "" {
+		return nil, fmt.Errorf("timestamp field is required")
+	}
+
+	// Validate field name to prevent SQL injection
+	if !validTableName.MatchString(timestampField) {
+		return nil, fmt.Errorf("invalid timestamp field name: %s", timestampField)
+	}
+
+	query := fmt.Sprintf("SELECT %s FROM %s ORDER BY %s DESC LIMIT 1", timestampField, p.table, timestampField)
+
+	var timestamp interface{}
+	err := p.db.QueryRowContext(ctx, query).Scan(&timestamp)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Table is empty
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get latest timestamp: %w", err)
+	}
+
+	return timestamp, nil
+}
+
+// IsTableEmpty checks if the target table is empty
+func (p *PostgreSQLSink) IsTableEmpty(ctx context.Context) (bool, error) {
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %s LIMIT 1", p.table)
+
+	var count int
+	err := p.db.QueryRowContext(ctx, query).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if table is empty: %w", err)
+	}
+
+	return count == 0, nil
+}

@@ -195,22 +195,99 @@ For detailed field mapping options, see [FIELD_MAPPING.md](FIELD_MAPPING.md).
 
 ## How Sync Works
 
-### Change Data Capture (CDC) Only
+### Initial Sync + CDC Mode
 
-**Important**: The pipeline currently operates in **CDC-only mode**:
+The pipeline now supports **initial sync** before starting CDC:
 
-- ✅ Monitors for **new changes** after the pipeline starts
+#### Initial Sync (Optional, Configurable)
+
+When enabled, the pipeline can perform an initial synchronization of existing data:
+
+- ✅ **Smart sync**: Queries sink for latest timestamp, syncs only newer data
+- ✅ **Full sync**: If sink is empty, syncs all existing data from source
+- ✅ **Incremental sync**: Based on configurable timestamp field
+- ✅ **Force sync**: Option to force full resync regardless of sink state
+
+**Configuration:**
+
+```json
+{
+  "pipeline": {
+    "name": "my-pipeline",
+    "sync": {
+      "initial_sync": true,
+      "force_initial_sync": false,
+      "timestamp_field": "updated_at",
+      "batch_size": 1000
+    }
+  }
+}
+```
+
+**Sync Options:**
+- `initial_sync` (bool): Enable initial sync phase
+- `force_initial_sync` (bool): Force full sync even if data exists in sink
+- `timestamp_field` (string): Field name to use for timestamp-based incremental sync
+- `batch_size` (int): Number of documents to process per batch (default: 1000)
+
+**How It Works:**
+
+1. **If sink is empty**: Syncs all data from source
+2. **If sink has data and timestamp_field is set**: 
+   - Queries sink for latest timestamp
+   - Syncs only documents with timestamp >= latest
+3. **If force_initial_sync is true**: Syncs all data regardless of sink state
+
+#### Change Data Capture (CDC)
+
+After initial sync (if enabled), the pipeline starts CDC mode:
+
+- ✅ Monitors for **new changes** after initial sync completes
 - ✅ Captures inserts, updates, and deletes in real-time
-- ❌ Does **NOT** perform an initial full sync of existing data
+- ✅ Listens to MongoDB's change stream (oplog) continuously
 
 **What this means:**
-- Only documents created/modified/deleted **after** the pipeline starts are synced
-- Pre-existing data in MongoDB is **not** automatically copied to PostgreSQL
+- With initial sync enabled: Full data sync first, then real-time CDC
+- Without initial sync: Only real-time changes from pipeline start
 - The pipeline listens to MongoDB's change stream (oplog) from the current point in time
 
 ### Initial Data Sync Strategies
 
-For production deployments, you should perform an initial data load before starting the CDC pipeline:
+### Example: Enable Initial Sync
+
+```json
+{
+  "pipeline": {
+    "name": "mongodb-to-postgresql",
+    "sync": {
+      "initial_sync": true,
+      "timestamp_field": "updated_at",
+      "batch_size": 1000
+    }
+  },
+  "source": {
+    "type": "mongodb",
+    "settings": {
+      "uri": "mongodb://localhost:27017",
+      "database": "mydb",
+      "collection": "users"
+    }
+  },
+  "sink": {
+    "type": "postgresql",
+    "settings": {
+      "connection_string": "host=localhost...",
+      "table": "users"
+    }
+  }
+}
+```
+
+**Note**: Your MongoDB documents and PostgreSQL table should have the timestamp field (e.g., `updated_at`) for incremental sync to work.
+
+### Manual Sync Strategies (Legacy)
+
+If you prefer not to use the built-in initial sync, you can still perform manual bulk loads:
 
 #### Option 1: Manual Bulk Load
 
@@ -219,36 +296,9 @@ For production deployments, you should perform an initial data load before start
 mongoexport --uri="mongodb://localhost:27017" --db=mydb --collection=users --out=users.json
 
 # Import to PostgreSQL (custom script or tool)
-# Then start the CDC pipeline
+# Then start the CDC pipeline with initial_sync: false
 ./data-pipe -config config.json
 ```
-
-#### Option 2: MongoDB Tools
-
-```bash
-# Use mongodump/mongorestore or MongoDB Compass
-mongodump --uri="mongodb://localhost:27017" --db=mydb --collection=users
-
-# Convert and load to PostgreSQL, then start CDC
-```
-
-#### Option 3: Custom Script
-
-Write a one-time script to:
-1. Query all existing documents from MongoDB
-2. Insert them into PostgreSQL
-3. Start the data-pipe for ongoing CDC
-
-### Resume from Specific Point
-
-MongoDB change streams support resume tokens. To replay changes from a specific point in time:
-
-```go
-// Future enhancement - not currently implemented
-opts := options.ChangeStream().SetStartAtOperationTime(&timestamp)
-```
-
-This feature is planned for future releases.
 
 ## Extending the Pipeline
 

@@ -246,9 +246,45 @@ db.users.deleteOne({ email: "john@example.com" })
 
 All changes will automatically sync to PostgreSQL!
 
+## Initial Sync Feature (New!)
+
+The pipeline now supports automatic initial synchronization of existing data:
+
+### Quick Enable
+
+Add to your `config.json`:
+
+```json
+{
+  "pipeline": {
+    "name": "mongodb-to-postgresql",
+    "sync": {
+      "initial_sync": true,
+      "timestamp_field": "updated_at",
+      "batch_size": 1000
+    }
+  }
+}
+```
+
+### How It Works
+
+1. **Empty sink**: Syncs all existing MongoDB data
+2. **Has data**: Syncs only documents newer than latest timestamp in sink
+3. **After sync**: Starts CDC for real-time changes
+
+See `INITIAL_SYNC.md` for complete documentation.
+
 ## Understanding CDC Mode
 
-**Important**: This pipeline operates in **Change Data Capture (CDC) mode only**:
+**With Initial Sync Enabled** (Recommended):
+- ✅ Syncs existing documents first
+- ✅ Then monitors for new changes
+- ✅ No data loss on first deployment
+
+**With Initial Sync Disabled** (Legacy):
+
+**Important**: The pipeline operates in **Change Data Capture (CDC) mode only** when initial sync is disabled:
 
 ### What Gets Synced
 - ✅ Documents created **after** the pipeline starts

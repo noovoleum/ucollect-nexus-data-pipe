@@ -56,7 +56,7 @@ func main() {
 
 	// Create transformer
 	var transformer pipeline.Transformer
-	
+
 	if cfg.Transformer.Type != "" {
 		switch cfg.Transformer.Type {
 		case "fieldmapper":
@@ -64,18 +64,18 @@ func main() {
 			if _, ok := cfg.Transformer.Settings["mappings"]; !ok {
 				logger.Fatalf("fieldmapper transformer requires 'mappings' configuration")
 			}
-			
+
 			// Convert settings to JSON and parse into FieldMapperConfig
 			settingsJSON, err := json.Marshal(cfg.Transformer.Settings)
 			if err != nil {
 				logger.Fatalf("Failed to marshal transformer settings: %v", err)
 			}
-			
+
 			var fmConfig transform.FieldMapperConfig
 			if err := json.Unmarshal(settingsJSON, &fmConfig); err != nil {
 				logger.Fatalf("Failed to parse fieldmapper configuration: %v", err)
 			}
-			
+
 			fm, err := transform.NewFieldMapper(fmConfig)
 			if err != nil {
 				logger.Fatalf("Failed to create field mapper: %v", err)
@@ -108,12 +108,135 @@ func main() {
 		cancel()
 	}()
 
-	// Run pipeline
-	logger.Println("Starting data pipeline...")
+	// Handle initial sync if configured
+	if cfg.Pipeline.Sync.InitialSync {
+		logger.Println("Initial sync is enabled")
+
+		// Perform initial sync
+		if err := performInitialSync(ctx, cfg, src, snk, transformer, logger); err != nil {
+			logger.Fatalf("Initial sync failed: %v", err)
+		}
+	}
+
+	// Run CDC pipeline
+	logger.Println("Starting CDC pipeline...")
 	if err := pipe.Run(ctx); err != nil {
 		logger.Fatalf("Pipeline error: %v", err)
 	}
 
 	logger.Println("Pipeline stopped")
 	fmt.Println("Goodbye!")
+}
+
+// performInitialSync handles the initial synchronization of data
+func performInitialSync(ctx context.Context, cfg *config.Config, src pipeline.Source, snk pipeline.Sink, transformer pipeline.Transformer, logger *log.Logger) error {
+	// Type assert to access MongoDB-specific methods
+	mongoSrc, ok := src.(*source.MongoDBSource)
+	if !ok {
+		return fmt.Errorf("initial sync is only supported for MongoDB sources")
+	}
+
+	pgSink, ok := snk.(*sink.PostgreSQLSink)
+	if !ok {
+		return fmt.Errorf("initial sync is only supported for PostgreSQL sinks")
+	}
+
+	// Ensure connections are established
+	if err := mongoSrc.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to MongoDB: %w", err)
+	}
+
+	if err := pgSink.Connect(ctx); err != nil {
+		return fmt.Errorf("failed to connect to PostgreSQL: %w", err)
+	}
+
+	// Determine initial sync strategy
+	var fromTimestamp interface{}
+	syncAll := cfg.Pipeline.Sync.ForceInitialSync
+
+	if !syncAll && cfg.Pipeline.Sync.TimestampField != "" {
+		// Check if sink table is empty
+		isEmpty, err := pgSink.IsTableEmpty(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check if sink table is empty: %w", err)
+		}
+
+		if isEmpty {
+			logger.Println("Sink table is empty, performing full initial sync")
+			syncAll = true
+		} else {
+			// Get latest timestamp from sink
+			ts, err := pgSink.GetLatestTimestamp(ctx, cfg.Pipeline.Sync.TimestampField)
+			if err != nil {
+				logger.Printf("Warning: failed to get latest timestamp from sink: %v", err)
+				logger.Println("Falling back to full initial sync")
+				syncAll = true
+			} else if ts != nil {
+				fromTimestamp = ts
+				logger.Printf("Starting incremental initial sync from timestamp: %v", fromTimestamp)
+			} else {
+				logger.Println("No timestamp found in sink, performing full initial sync")
+				syncAll = true
+			}
+		}
+	} else if syncAll {
+		logger.Println("Force initial sync is enabled, syncing all data")
+	}
+
+	// Prepare initial sync config
+	syncConfig := source.InitialSyncConfig{
+		Enabled:        true,
+		TimestampField: cfg.Pipeline.Sync.TimestampField,
+		FromTimestamp:  fromTimestamp,
+		BatchSize:      cfg.Pipeline.Sync.BatchSize,
+	}
+
+	if syncConfig.BatchSize <= 0 {
+		syncConfig.BatchSize = 1000
+	}
+
+	// Perform initial sync
+	logger.Println("Starting initial sync...")
+	events, errors := mongoSrc.PerformInitialSync(ctx, syncConfig)
+
+	// Transform and write events
+	transformedEvents := make(chan pipeline.Event)
+	go func() {
+		defer close(transformedEvents)
+		for event := range events {
+			if transformer != nil {
+				transformed, err := transformer.Transform(event)
+				if err != nil {
+					logger.Printf("Error transforming event during initial sync: %v", err)
+					continue
+				}
+				event = transformed
+			}
+			transformedEvents <- event
+		}
+	}()
+
+	// Write to sink
+	sinkErrors := pgSink.Write(ctx, transformedEvents)
+
+	// Handle errors from both channels
+	errorOccurred := false
+	go func() {
+		for err := range errors {
+			logger.Printf("Initial sync source error: %v", err)
+			errorOccurred = true
+		}
+	}()
+
+	for err := range sinkErrors {
+		logger.Printf("Initial sync sink error: %v", err)
+		errorOccurred = true
+	}
+
+	if errorOccurred {
+		return fmt.Errorf("errors occurred during initial sync")
+	}
+
+	logger.Println("Initial sync completed successfully")
+	return nil
 }
