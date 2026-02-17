@@ -22,7 +22,6 @@ type Metrics struct {
 	PipelineStatus     prometheus.Gauge
 	SourceConnected    prometheus.Gauge
 	SinkConnected      prometheus.Gauge
-	registry           *prometheus.Registry
 }
 
 // NewMetrics creates and registers all pipeline metrics
