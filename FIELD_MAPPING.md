@@ -46,9 +46,25 @@ Each mapping defines how to transform a source field:
   "format": "lowercase",           // Format transformation (optional)
   "default": "N/A",               // Default value if field is missing (optional)
   "required": false,              // Fail if field is missing (optional, default: false)
-  "extract": "^([^@]+)@"          // Regex pattern to extract value (optional)
+  "extract": "^([^@]+)@",         // Regex pattern to extract value (optional)
+  "nested_path": "user.email"     // Dot-separated path for nested fields (optional)
 }
 ```
+
+**Nested Field Access:**
+
+Use `nested_path` to access nested objects:
+
+```json
+{
+  "source": "user",
+  "nested_path": "user.profile.email",
+  "destination": "email",
+  "format": "lowercase"
+}
+```
+
+This will extract `email` from `data.user.profile.email` and apply lowercase formatting.
 
 #### `include_all` (boolean)
 
@@ -115,6 +131,23 @@ List of field names to exclude from output (only applies when `include_all: true
   {"source": "price", "format": "float"}
   // "29.99" → 29.99
   ```
+
+- **`bool`** or **`boolean`** - Convert to boolean
+  ```json
+  {"source": "active", "format": "bool"}
+  // "true" → true
+  // "yes" → true
+  // "1" → true
+  // "false" → false
+  // "no" → false
+  // "0" → false
+  ```
+  
+  Supported boolean values:
+  - Standard: `true`, `false`
+  - Friendly: `yes`, `no`, `y`, `n`
+  - Numeric: `1`, `0`
+  - Case-insensitive
 
 - **`date`** or **`datetime`** - Parse date/time
   ```json
@@ -300,6 +333,74 @@ Extract portions of field values using regex patterns:
 {"username": "john.doe", "domain": "example.com"}
 ```
 
+### Example 6: Nested Field Extraction
+
+```json
+{
+  "transformer": {
+    "type": "fieldmapper",
+    "settings": {
+      "mappings": [
+        {
+          "source": "user",
+          "nested_path": "user.profile.email",
+          "destination": "email",
+          "format": "lowercase"
+        },
+        {
+          "source": "user",
+          "nested_path": "user.profile.firstName",
+          "destination": "first_name"
+        },
+        {
+          "source": "address",
+          "nested_path": "address.city",
+          "destination": "city"
+        },
+        {
+          "source": "settings",
+          "nested_path": "settings.notifications.enabled",
+          "destination": "notifications",
+          "format": "bool"
+        }
+      ]
+    }
+  }
+}
+```
+
+**Input:**
+```json
+{
+  "user": {
+    "id": 123,
+    "profile": {
+      "email": "JOHN@EXAMPLE.COM",
+      "firstName": "John"
+    }
+  },
+  "address": {
+    "city": "San Francisco",
+    "state": "CA"
+  },
+  "settings": {
+    "notifications": {
+      "enabled": "true"
+    }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "email": "john@example.com",
+  "first_name": "John",
+  "city": "San Francisco",
+  "notifications": true
+}
+```
+
 ## Edge Cases Handling
 
 ### Null Values
@@ -351,11 +452,24 @@ In strict mode, format errors cause the transformation to fail.
 
 ### Complex Nested Objects
 
-The field mapper works on the top level of `event.Data`. For nested objects, you can:
+The field mapper now supports nested field access using the `nested_path` configuration:
 
-1. Access the entire nested object as a value
-2. Use preprocessing to flatten nested structures
-3. Create a custom transformer for deep nesting
+1. **Direct nested access** - Use `nested_path` with dot notation (e.g., `"user.profile.email"`)
+2. **Multiple levels** - Support for deeply nested structures (e.g., `"data.user.settings.preferences.theme"`)
+3. **Combined with formatting** - Apply transformations to nested values
+4. **Default values** - Works with nested paths when fields are missing
+
+Example:
+```json
+{
+  "source": "user",
+  "nested_path": "user.address.city",
+  "destination": "city",
+  "format": "uppercase"
+}
+```
+
+**Note:** For complex transformations involving arrays or dynamic keys, consider creating a custom transformer.
 
 ## Performance Considerations
 

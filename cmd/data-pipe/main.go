@@ -77,7 +77,7 @@ func main() {
 				logger.Fatalf("Failed to parse fieldmapper configuration: %v", err)
 			}
 
-			fm, err := transform.NewFieldMapper(fmConfig)
+			fm, err := transform.NewFieldMapperWithLogger(fmConfig, logger)
 			if err != nil {
 				logger.Fatalf("Failed to create field mapper: %v", err)
 			}

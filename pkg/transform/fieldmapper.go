@@ -2,7 +2,9 @@ package transform
 
 import (
 	"fmt"
+	"log"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,10 +15,11 @@ import (
 type FieldMapping struct {
 	Source      string `json:"source"`      // Source field name
 	Destination string `json:"destination"` // Destination field name
-	Format      string `json:"format"`      // Format type: "string", "int", "float", "date", "uppercase", "lowercase", "trim"
+	Format      string `json:"format"`      // Format type: "string", "int", "float", "bool", "date", "uppercase", "lowercase", "trim", "titlecase"
 	Default     string `json:"default"`     // Default value if source is missing or null
 	Required    bool   `json:"required"`    // If true, error if field is missing
 	Extract     string `json:"extract"`     // Regex pattern to extract from source value
+	NestedPath  string `json:"nested_path"` // Dot-separated path for nested fields (e.g., "address.city")
 }
 
 // FieldMapperConfig contains field mapping configuration
@@ -31,13 +34,24 @@ type FieldMapperConfig struct {
 type FieldMapper struct {
 	config     FieldMapperConfig
 	extractors map[string]*regexp.Regexp
+	logger     *log.Logger
 }
 
 // NewFieldMapper creates a new field mapper transformer
 func NewFieldMapper(config FieldMapperConfig) (*FieldMapper, error) {
+	return NewFieldMapperWithLogger(config, nil)
+}
+
+// NewFieldMapperWithLogger creates a new field mapper transformer with logger
+func NewFieldMapperWithLogger(config FieldMapperConfig, logger *log.Logger) (*FieldMapper, error) {
+	if logger == nil {
+		logger = log.Default()
+	}
+
 	fm := &FieldMapper{
 		config:     config,
 		extractors: make(map[string]*regexp.Regexp),
+		logger:     logger,
 	}
 
 	// Compile regex patterns for extraction
@@ -61,7 +75,8 @@ func (f *FieldMapper) Transform(event pipeline.Event) (pipeline.Event, error) {
 
 	// Apply mappings
 	for _, mapping := range f.config.Mappings {
-		value, exists := event.Data[mapping.Source]
+		// Get value from source field (supports nested paths)
+		value, exists := f.getFieldValue(event.Data, mapping.Source, mapping.NestedPath)
 
 		// Handle missing required fields
 		if !exists || value == nil {
@@ -136,11 +151,8 @@ func (f *FieldMapper) Transform(event pipeline.Event) (pipeline.Event, error) {
 
 	// Log non-fatal errors if any
 	if len(errors) > 0 && !f.config.StrictMode {
-		// In a production setting, these would be logged
-		// For now, they are collected but not returned as errors
 		for _, errMsg := range errors {
-			// TODO: Add logger support to FieldMapper for better error visibility
-			_ = errMsg
+			f.logger.Printf("[FieldMapper] Non-fatal transformation error: %s", errMsg)
 		}
 	}
 
@@ -210,7 +222,51 @@ func (f *FieldMapper) formatValue(value interface{}, format string) (interface{}
 		}
 		return strings.Join(words, " "), nil
 
+	case "bool", "boolean":
+		// Handle various boolean representations
+		boolVal, err := strconv.ParseBool(strValue)
+		if err != nil {
+			// Try common representations
+			lower := strings.ToLower(strings.TrimSpace(strValue))
+			switch lower {
+			case "yes", "y", "1":
+				return true, nil
+			case "no", "n", "0":
+				return false, nil
+			default:
+				return nil, fmt.Errorf("cannot convert to bool: %s", strValue)
+			}
+		}
+		return boolVal, nil
+
 	default:
 		return value, nil
 	}
+}
+
+// getFieldValue retrieves a value from data, supporting nested paths
+func (f *FieldMapper) getFieldValue(data map[string]interface{}, source string, nestedPath string) (interface{}, bool) {
+	// If no nested path is specified, use source field directly
+	if nestedPath == "" {
+		value, exists := data[source]
+		return value, exists
+	}
+
+	// Use nested path to navigate through the data structure
+	parts := strings.Split(nestedPath, ".")
+	var current interface{} = data
+
+	for _, part := range parts {
+		if currentMap, ok := current.(map[string]interface{}); ok {
+			var exists bool
+			current, exists = currentMap[part]
+			if !exists {
+				return nil, false
+			}
+		} else {
+			return nil, false
+		}
+	}
+
+	return current, true
 }
