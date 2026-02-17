@@ -1,0 +1,58 @@
+{
+  "pipeline": {
+    "name": "mongodb-to-postgresql-with-mapping"
+  },
+  "source": {
+    "type": "mongodb",
+    "settings": {
+      "uri": "mongodb://localhost:27017",
+      "database": "mydb",
+      "collection": "users"
+    }
+  },
+  "sink": {
+    "type": "postgresql",
+    "settings": {
+      "connection_string": "host=localhost port=5432 user=postgres password=postgres dbname=mydb sslmode=disable",
+      "table": "users"
+    }
+  },
+  "transformer": {
+    "type": "fieldmapper",
+    "settings": {
+      "mappings": [
+        {
+          "source": "firstName",
+          "destination": "first_name"
+        },
+        {
+          "source": "lastName",
+          "destination": "last_name"
+        },
+        {
+          "source": "email",
+          "destination": "email",
+          "format": "lowercase"
+        },
+        {
+          "source": "phone",
+          "destination": "phone_number",
+          "format": "trim"
+        },
+        {
+          "source": "status",
+          "destination": "status",
+          "default": "active",
+          "format": "lowercase"
+        },
+        {
+          "source": "createdAt",
+          "destination": "created_at",
+          "format": "date"
+        }
+      ],
+      "include_all": false,
+      "strict_mode": false
+    }
+  }
+}

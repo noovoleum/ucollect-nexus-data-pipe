@@ -1,0 +1,38 @@
+services:
+  data-pipe:
+    build: .
+    container_name: data-pipe
+    volumes:
+      - ./config.json:/root/config.json:ro
+    depends_on:
+      - mongodb
+      - postgres
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    command: mongod --replSet rs0
+    volumes:
+      - mongodb_data:/data/db
+
+  postgres:
+    image: postgres:16
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  mongodb_data:
+  postgres_data:
