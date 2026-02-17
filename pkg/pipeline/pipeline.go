@@ -20,14 +20,15 @@ type MetricsRecorder interface {
 
 // Pipeline represents a data pipeline from source to sink
 type Pipeline struct {
-	name         string
-	source       Source
-	sink         Sink
-	transformer  Transformer
-	logger       *log.Logger
-	metrics      MetricsRecorder
-	startTime    time.Time
-	lastEventTime time.Time
+	name            string
+	source          Source
+	sink            Sink
+	transformer     Transformer
+	logger          *log.Logger
+	metrics         MetricsRecorder
+	startTime       time.Time
+	mu              sync.RWMutex // protects the fields below
+	lastEventTime   time.Time
 	sourceConnected bool
 	sinkConnected   bool
 }
@@ -54,11 +55,16 @@ func (p *Pipeline) SetMetrics(metrics MetricsRecorder) {
 
 // IsHealthy returns true if the pipeline is healthy
 func (p *Pipeline) IsHealthy() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
 	return p.sourceConnected && p.sinkConnected
 }
 
 // GetStatus returns the current health status of the pipeline
 func (p *Pipeline) GetStatus() HealthStatus {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	
 	uptime := time.Since(p.startTime).Seconds()
 	
 	var lastEventTimeStr string
@@ -67,8 +73,8 @@ func (p *Pipeline) GetStatus() HealthStatus {
 	}
 	
 	return HealthStatus{
-		Healthy:          p.IsHealthy(),
-		PipelineRunning:  p.IsHealthy(),
+		Healthy:          p.sourceConnected && p.sinkConnected,
+		PipelineRunning:  p.sourceConnected && p.sinkConnected,
 		SourceConnected:  p.sourceConnected,
 		SinkConnected:    p.sinkConnected,
 		LastEventTime:    lastEventTimeStr,
@@ -105,14 +111,18 @@ func (p *Pipeline) Run(ctx context.Context) error {
 		}
 		return fmt.Errorf("failed to connect source: %w", err)
 	}
+	p.mu.Lock()
 	p.sourceConnected = true
+	p.mu.Unlock()
 	if p.metrics != nil {
 		p.metrics.SetSourceConnected(true)
 		p.metrics.RecordProcessingDuration(p.name, "source_connect", time.Since(startTime).Seconds())
 	}
 	defer func() {
 		p.source.Close()
+		p.mu.Lock()
 		p.sourceConnected = false
+		p.mu.Unlock()
 		if p.metrics != nil {
 			p.metrics.SetSourceConnected(false)
 		}
@@ -127,14 +137,18 @@ func (p *Pipeline) Run(ctx context.Context) error {
 		}
 		return fmt.Errorf("failed to connect sink: %w", err)
 	}
+	p.mu.Lock()
 	p.sinkConnected = true
+	p.mu.Unlock()
 	if p.metrics != nil {
 		p.metrics.SetSinkConnected(true)
 		p.metrics.RecordProcessingDuration(p.name, "sink_connect", time.Since(startTime).Seconds())
 	}
 	defer func() {
 		p.sink.Close()
+		p.mu.Lock()
 		p.sinkConnected = false
+		p.mu.Unlock()
 		if p.metrics != nil {
 			p.metrics.SetSinkConnected(false)
 		}
@@ -149,7 +163,9 @@ func (p *Pipeline) Run(ctx context.Context) error {
 		defer close(transformedEvents)
 		for event := range events {
 			eventStartTime := time.Now()
+			p.mu.Lock()
 			p.lastEventTime = eventStartTime
+			p.mu.Unlock()
 			
 			if p.transformer != nil {
 				transformed, err := p.transformer.Transform(event)

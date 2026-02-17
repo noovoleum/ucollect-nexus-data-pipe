@@ -1,8 +1,16 @@
 package metrics
 
 import (
+	"sync"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+)
+
+var (
+	// metricsRegistry keeps track of registered metrics to prevent duplicates
+	metricsRegistry = make(map[string]bool)
+	registryMu      sync.Mutex
 )
 
 // Metrics holds all Prometheus metrics for the data pipeline
@@ -13,11 +21,22 @@ type Metrics struct {
 	PipelineStatus     prometheus.Gauge
 	SourceConnected    prometheus.Gauge
 	SinkConnected      prometheus.Gauge
+	registry           *prometheus.Registry
 }
 
 // NewMetrics creates and registers all pipeline metrics
 func NewMetrics(pipelineName string) *Metrics {
-	return &Metrics{
+	registryMu.Lock()
+	defer registryMu.Unlock()
+
+	// Check if metrics for this pipeline already exist
+	if metricsRegistry[pipelineName] {
+		// Return nil to signal that metrics already exist
+		// Caller should handle this gracefully
+		return nil
+	}
+
+	m := &Metrics{
 		EventsProcessed: promauto.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "datapipe_events_processed_total",
@@ -68,6 +87,9 @@ func NewMetrics(pipelineName string) *Metrics {
 			},
 		),
 	}
+
+	metricsRegistry[pipelineName] = true
+	return m
 }
 
 // RecordEventProcessed records a successfully processed event

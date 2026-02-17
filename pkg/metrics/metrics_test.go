@@ -16,9 +16,13 @@ func TestNewMetrics(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		// Clear our tracking registry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-new")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-new")
 	
 	if m == nil {
 		t.Fatal("Expected metrics to be created")
@@ -56,14 +60,21 @@ func TestRecordEventProcessed(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-events")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-events")
+	
+	if m == nil {
+		t.Fatal("Expected metrics to be created")
+	}
 	
 	// Record some events
-	m.RecordEventProcessed("test-pipeline", "insert")
-	m.RecordEventProcessed("test-pipeline", "insert")
-	m.RecordEventProcessed("test-pipeline", "update")
+	m.RecordEventProcessed("test-pipeline-events", "insert")
+	m.RecordEventProcessed("test-pipeline-events", "insert")
+	m.RecordEventProcessed("test-pipeline-events", "update")
 	
 	// Verify the counter was incremented
 	count := testutil.CollectAndCount(m.EventsProcessed)
@@ -78,13 +89,20 @@ func TestRecordEventError(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-errors")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-errors")
+	
+	if m == nil {
+		t.Fatal("Expected metrics to be created")
+	}
 	
 	// Record some errors
-	m.RecordEventError("test-pipeline", "source", "connection_error")
-	m.RecordEventError("test-pipeline", "sink", "write_error")
+	m.RecordEventError("test-pipeline-errors", "source", "connection_error")
+	m.RecordEventError("test-pipeline-errors", "sink", "write_error")
 	
 	// Verify the counter was incremented
 	count := testutil.CollectAndCount(m.EventsErrored)
@@ -99,9 +117,16 @@ func TestSetPipelineRunning(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-running")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-running")
+	
+	if m == nil {
+		t.Fatal("Expected metrics to be created")
+	}
 	
 	// Test setting pipeline to running
 	m.SetPipelineRunning(true)
@@ -116,9 +141,16 @@ func TestSetSourceConnected(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-source")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-source")
+	
+	if m == nil {
+		t.Fatal("Expected metrics to be created")
+	}
 	
 	// Test setting source connected
 	m.SetSourceConnected(true)
@@ -131,9 +163,16 @@ func TestSetSinkConnected(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-sink")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-sink")
+	
+	if m == nil {
+		t.Fatal("Expected metrics to be created")
+	}
 	
 	// Test setting sink connected
 	m.SetSinkConnected(true)
@@ -146,14 +185,21 @@ func TestRecordProcessingDuration(t *testing.T) {
 	prometheus.DefaultRegisterer = reg
 	defer func() {
 		prometheus.DefaultRegisterer = oldRegistry
+		registryMu.Lock()
+		delete(metricsRegistry, "test-pipeline-duration")
+		registryMu.Unlock()
 	}()
 	
-	m := NewMetrics("test-pipeline")
+	m := NewMetrics("test-pipeline-duration")
+	
+	if m == nil {
+		t.Fatal("Expected metrics to be created")
+	}
 	
 	// Record some durations
-	m.RecordProcessingDuration("test-pipeline", "source", 0.5)
-	m.RecordProcessingDuration("test-pipeline", "sink", 0.3)
-	m.RecordProcessingDuration("test-pipeline", "transform", 0.1)
+	m.RecordProcessingDuration("test-pipeline-duration", "source", 0.5)
+	m.RecordProcessingDuration("test-pipeline-duration", "sink", 0.3)
+	m.RecordProcessingDuration("test-pipeline-duration", "transform", 0.1)
 	
 	// Verify the histogram was updated
 	count := testutil.CollectAndCount(m.ProcessingDuration)

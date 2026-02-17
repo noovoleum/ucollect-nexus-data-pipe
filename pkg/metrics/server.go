@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -65,13 +66,23 @@ func NewServer(addr string, health HealthChecker, logger *log.Logger) *Server {
 func (s *Server) Start() error {
 	s.logger.Printf("Starting metrics server on %s", s.server.Addr)
 	
+	// Create a channel to receive startup errors
+	errChan := make(chan error, 1)
+	
 	go func() {
 		if err := s.server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			s.logger.Printf("Metrics server error: %v", err)
+			errChan <- err
 		}
 	}()
 	
-	return nil
+	// Wait a brief moment to catch immediate errors (e.g., port already in use)
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("failed to start server: %w", err)
+	case <-time.After(100 * time.Millisecond):
+		// Server started successfully
+		return nil
+	}
 }
 
 // Shutdown gracefully shuts down the HTTP server

@@ -107,6 +107,9 @@ func main() {
 		
 		// Create metrics recorder
 		metricsRecorder := metrics.NewMetrics(cfg.Pipeline.Name)
+		if metricsRecorder == nil {
+			logger.Fatalf("Failed to create metrics: pipeline name '%s' already has metrics registered", cfg.Pipeline.Name)
+		}
 		pipe.SetMetrics(metricsRecorder)
 		
 		// Create health adapter
@@ -116,10 +119,9 @@ func main() {
 		addr := fmt.Sprintf(":%d", metricsPort)
 		metricsServer = metrics.NewServer(addr, healthAdapter, logger)
 		if err := metricsServer.Start(); err != nil {
-			logger.Printf("Warning: failed to start metrics server: %v", err)
-		} else {
-			logger.Printf("Metrics server started on %s", addr)
+			logger.Fatalf("Failed to start metrics server: %v", err)
 		}
+		logger.Printf("Metrics server started on %s", addr)
 	}
 
 	// Setup context with cancellation
