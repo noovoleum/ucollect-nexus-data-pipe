@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"github.com/IEatCodeDaily/data-pipe/pkg/config"
@@ -219,19 +220,28 @@ func performInitialSync(ctx context.Context, cfg *config.Config, src pipeline.So
 	// Write to sink
 	sinkErrors := pgSink.Write(ctx, transformedEvents)
 
-	// Handle errors from both channels
+	// Handle errors from both channels concurrently
+	var wg sync.WaitGroup
+	wg.Add(2)
 	errorOccurred := false
+
 	go func() {
+		defer wg.Done()
 		for err := range errors {
 			logger.Printf("Initial sync source error: %v", err)
 			errorOccurred = true
 		}
 	}()
 
-	for err := range sinkErrors {
-		logger.Printf("Initial sync sink error: %v", err)
-		errorOccurred = true
-	}
+	go func() {
+		defer wg.Done()
+		for err := range sinkErrors {
+			logger.Printf("Initial sync sink error: %v", err)
+			errorOccurred = true
+		}
+	}()
+
+	wg.Wait()
 
 	if errorOccurred {
 		return fmt.Errorf("errors occurred during initial sync")

@@ -149,6 +149,10 @@ func (p *PostgreSQLSink) insertEvent(ctx context.Context, tx *sql.Tx, event pipe
 
 	i := 1
 	for key, value := range event.Data {
+		// Validate column name to prevent SQL injection
+		if !validTableName.MatchString(key) {
+			return fmt.Errorf("invalid column name: %s", key)
+		}
 		columns = append(columns, key)
 		placeholders = append(placeholders, fmt.Sprintf("$%d", i))
 		values = append(values, value)

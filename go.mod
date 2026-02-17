@@ -1,6 +1,6 @@
 module github.com/IEatCodeDaily/data-pipe
 
-go 1.24.13
+go 1.23
 
 require (
 	github.com/lib/pq v1.11.2

@@ -110,3 +110,31 @@ func TestValidTableNamePattern(t *testing.T) {
 		})
 	}
 }
+
+// TestColumnNameValidation tests that invalid column names are rejected during upsert
+func TestColumnNameValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnName string
+		valid      bool
+	}{
+		{"valid simple", "email", true},
+		{"valid with underscore", "first_name", true},
+		{"valid with numbers", "field_v2", true},
+		{"valid starting with underscore", "_id", true},
+		{"invalid SQL injection", "'; DROP TABLE users;--", false},
+		{"invalid special chars", "user$name", false},
+		{"invalid dots", "user.name", false},
+		{"invalid spaces", "first name", false},
+		{"invalid starting with number", "1field", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			matched := validTableName.MatchString(tt.columnName)
+			if matched != tt.valid {
+				t.Errorf("Column name validation for %q = %v, want %v", tt.columnName, matched, tt.valid)
+			}
+		})
+	}
+}

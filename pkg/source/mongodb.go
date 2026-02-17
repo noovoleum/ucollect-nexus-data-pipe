@@ -152,7 +152,9 @@ func convertBSONToMap(doc bson.M) map[string]interface{} {
 func (m *MongoDBSource) Close() error {
 	if m.client != nil {
 		m.logger.Println("Closing MongoDB connection")
-		return m.client.Disconnect(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return m.client.Disconnect(ctx)
 	}
 	return nil
 }
