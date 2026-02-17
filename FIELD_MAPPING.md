@@ -471,6 +471,52 @@ Example:
 
 **Note:** For complex transformations involving arrays or dynamic keys, consider creating a custom transformer.
 
+### PostgreSQL JSONB Compatibility
+
+The field mapper preserves nested objects as `map[string]interface{}` which is fully compatible with PostgreSQL's JSONB type:
+
+```json
+{
+  "mappings": [
+    {
+      "source": "user",
+      "destination": "user_metadata"
+      // No nested_path - extracts entire user object for JSONB column
+    },
+    {
+      "source": "user",
+      "nested_path": "user.email",
+      "destination": "email"
+      // Simultaneously extract specific fields
+    }
+  ]
+}
+```
+
+**Input:**
+```json
+{
+  "user": {
+    "id": 123,
+    "email": "john@example.com",
+    "profile": {
+      "age": 30,
+      "city": "San Francisco"
+    }
+  }
+}
+```
+
+**Output:**
+```json
+{
+  "user_metadata": {"id": 123, "email": "john@example.com", "profile": {"age": 30, "city": "San Francisco"}},
+  "email": "john@example.com"
+}
+```
+
+The `user_metadata` field can be inserted directly into a PostgreSQL JSONB column.
+
 ## Performance Considerations
 
 - **Regex Extraction**: Compiled once during initialization, minimal overhead

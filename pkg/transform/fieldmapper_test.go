@@ -711,3 +711,153 @@ func TestFieldMapperNestedFields(t *testing.T) {
 		}
 	})
 }
+
+func TestFieldMapperMultipleExtractFromSameSource(t *testing.T) {
+	// Test for regex extractor collision fix - multiple mappings from same source with different extract patterns
+	config := FieldMapperConfig{
+		Mappings: []FieldMapping{
+			{
+				Source:      "email",
+				Destination: "username",
+				Extract:     "^([^@]+)@",
+			},
+			{
+				Source:      "email",
+				Destination: "domain",
+				Extract:     "@(.+)$",
+			},
+		},
+	}
+
+	mapper, err := NewFieldMapper(config)
+	if err != nil {
+		t.Fatalf("Failed to create mapper: %v", err)
+	}
+
+	event := pipeline.Event{
+		Data: map[string]interface{}{
+			"email": "john.doe@example.com",
+		},
+	}
+
+	result, err := mapper.Transform(event)
+	if err != nil {
+		t.Fatalf("Transform failed: %v", err)
+	}
+
+	if result.Data["username"] != "john.doe" {
+		t.Errorf("Expected username=john.doe, got %v", result.Data["username"])
+	}
+	if result.Data["domain"] != "example.com" {
+		t.Errorf("Expected domain=example.com, got %v", result.Data["domain"])
+	}
+}
+
+func TestFieldMapperJSONBCompatibility(t *testing.T) {
+	// Test that nested objects can be extracted as-is for JSONB columns
+	t.Run("extract nested object", func(t *testing.T) {
+		config := FieldMapperConfig{
+			Mappings: []FieldMapping{
+				{
+					Source:      "user",
+					Destination: "user_data",
+					// No nested_path - extract entire nested object
+				},
+			},
+		}
+
+		mapper, err := NewFieldMapper(config)
+		if err != nil {
+			t.Fatalf("Failed to create mapper: %v", err)
+		}
+
+		event := pipeline.Event{
+			Data: map[string]interface{}{
+				"user": map[string]interface{}{
+					"id":    123,
+					"email": "john@example.com",
+					"profile": map[string]interface{}{
+						"age":  30,
+						"city": "SF",
+					},
+				},
+			},
+		}
+
+		result, err := mapper.Transform(event)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+
+		// Should preserve the entire nested structure
+		userData, ok := result.Data["user_data"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected user_data to be map[string]interface{}, got %T", result.Data["user_data"])
+		}
+
+		if userData["id"] != 123 {
+			t.Errorf("Expected id=123, got %v", userData["id"])
+		}
+
+		profile, ok := userData["profile"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected profile to be map[string]interface{}, got %T", userData["profile"])
+		}
+
+		if profile["city"] != "SF" {
+			t.Errorf("Expected city=SF, got %v", profile["city"])
+		}
+	})
+
+	t.Run("mix nested extraction and object preservation", func(t *testing.T) {
+		config := FieldMapperConfig{
+			Mappings: []FieldMapping{
+				{
+					Source:      "user",
+					NestedPath:  "user.email",
+					Destination: "email",
+					Format:      "lowercase",
+				},
+				{
+					Source:      "user",
+					Destination: "metadata",
+					// Extract entire user object for JSONB column
+				},
+			},
+		}
+
+		mapper, err := NewFieldMapper(config)
+		if err != nil {
+			t.Fatalf("Failed to create mapper: %v", err)
+		}
+
+		event := pipeline.Event{
+			Data: map[string]interface{}{
+				"user": map[string]interface{}{
+					"email": "JOHN@EXAMPLE.COM",
+					"id":    456,
+				},
+			},
+		}
+
+		result, err := mapper.Transform(event)
+		if err != nil {
+			t.Fatalf("Transform failed: %v", err)
+		}
+
+		// Email should be extracted and formatted
+		if result.Data["email"] != "john@example.com" {
+			t.Errorf("Expected email=john@example.com, got %v", result.Data["email"])
+		}
+
+		// Entire user object should be preserved
+		metadata, ok := result.Data["metadata"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("Expected metadata to be map[string]interface{}, got %T", result.Data["metadata"])
+		}
+
+		if metadata["id"] != 456 {
+			t.Errorf("Expected id=456, got %v", metadata["id"])
+		}
+	})
+}

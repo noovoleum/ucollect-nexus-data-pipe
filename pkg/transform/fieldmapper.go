@@ -33,7 +33,7 @@ type FieldMapperConfig struct {
 // FieldMapper is a transformer that maps and formats fields
 type FieldMapper struct {
 	config     FieldMapperConfig
-	extractors map[string]*regexp.Regexp
+	extractors map[int]*regexp.Regexp // Key is mapping index, not source field name
 	logger     *log.Logger
 }
 
@@ -50,18 +50,18 @@ func NewFieldMapperWithLogger(config FieldMapperConfig, logger *log.Logger) (*Fi
 
 	fm := &FieldMapper{
 		config:     config,
-		extractors: make(map[string]*regexp.Regexp),
+		extractors: make(map[int]*regexp.Regexp),
 		logger:     logger,
 	}
 
 	// Compile regex patterns for extraction
-	for _, mapping := range config.Mappings {
+	for i, mapping := range config.Mappings {
 		if mapping.Extract != "" {
 			re, err := regexp.Compile(mapping.Extract)
 			if err != nil {
 				return nil, fmt.Errorf("invalid extract pattern for field %s: %w", mapping.Source, err)
 			}
-			fm.extractors[mapping.Source] = re
+			fm.extractors[i] = re
 		}
 	}
 
@@ -74,7 +74,7 @@ func (f *FieldMapper) Transform(event pipeline.Event) (pipeline.Event, error) {
 	errors := make([]string, 0)
 
 	// Apply mappings
-	for _, mapping := range f.config.Mappings {
+	for i, mapping := range f.config.Mappings {
 		// Get value from source field (supports nested paths)
 		value, exists := f.getFieldValue(event.Data, mapping.Source, mapping.NestedPath)
 
@@ -95,7 +95,7 @@ func (f *FieldMapper) Transform(event pipeline.Event) (pipeline.Event, error) {
 		}
 
 		// Extract using regex if specified
-		if extractor, ok := f.extractors[mapping.Source]; ok {
+		if extractor, ok := f.extractors[i]; ok {
 			strValue := fmt.Sprintf("%v", value)
 			matches := extractor.FindStringSubmatch(strValue)
 			if len(matches) > 1 {
