@@ -23,9 +23,8 @@ type PipelineConfig struct {
 
 // MetricsConfig contains metrics and monitoring settings
 type MetricsConfig struct {
-	Enabled bool   `json:"enabled"` // Enable metrics endpoint
-	Port    int    `json:"port"`    // Port for metrics server (default: 2112)
-	Path    string `json:"path"`    // Path for metrics endpoint (default: /metrics)
+	Enabled bool `json:"enabled"` // Enable metrics endpoint
+	Port    int  `json:"port"`    // Port for metrics server (default: 2112)
 }
 
 // SyncConfig contains synchronization settings
