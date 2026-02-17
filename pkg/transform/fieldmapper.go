@@ -226,12 +226,12 @@ func (f *FieldMapper) formatValue(value interface{}, format string) (interface{}
 		// Handle various boolean representations
 		boolVal, err := strconv.ParseBool(strValue)
 		if err != nil {
-			// Try common representations
+			// Try common representations not handled by strconv.ParseBool
 			lower := strings.ToLower(strings.TrimSpace(strValue))
 			switch lower {
-			case "yes", "y", "1":
+			case "yes", "y":
 				return true, nil
-			case "no", "n", "0":
+			case "no", "n":
 				return false, nil
 			default:
 				return nil, fmt.Errorf("cannot convert to bool: %s", strValue)
