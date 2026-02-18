@@ -1,0 +1,24 @@
+{
+  "pipeline": {
+    "name": "mongodb-to-postgresql-with-metrics",
+    "metrics": {
+      "enabled": true,
+      "port": 2112
+    }
+  },
+  "source": {
+    "type": "mongodb",
+    "settings": {
+      "uri": "mongodb://localhost:27017",
+      "database": "mydb",
+      "collection": "users"
+    }
+  },
+  "sink": {
+    "type": "postgresql",
+    "settings": {
+      "connection_string": "host=localhost port=5432 user=postgres password=postgres dbname=mydb sslmode=disable",
+      "table": "users"
+    }
+  }
+}

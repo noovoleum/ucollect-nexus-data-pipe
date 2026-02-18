@@ -189,7 +189,7 @@ func (m *MongoDBSource) PerformInitialSync(ctx context.Context, config InitialSy
 		opts := options.Find().SetBatchSize(int32(batchSize))
 		if config.TimestampField != "" {
 			// Sort by timestamp field to ensure ordered processing
-			opts.SetSort(bson.D{{Key: config.TimestampField, Value: 1}})
+			opts.SetSort(bson.D{bson.E{Key: config.TimestampField, Value: 1}})
 		}
 
 		cursor, err := collection.Find(ctx, filter, opts)
@@ -245,7 +245,7 @@ func (m *MongoDBSource) GetLatestTimestamp(ctx context.Context, timestampField s
 
 	collection := m.client.Database(m.database).Collection(m.collection)
 
-	opts := options.FindOne().SetSort(bson.D{{Key: timestampField, Value: -1}})
+	opts := options.FindOne().SetSort(bson.D{bson.E{Key: timestampField, Value: -1}})
 	var result bson.M
 	err := collection.FindOne(ctx, bson.M{}, opts).Decode(&result)
 	if err != nil {

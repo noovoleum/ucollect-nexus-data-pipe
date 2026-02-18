@@ -12,6 +12,7 @@ A lightweight, standalone Change Data Capture (CDC) pipeline written in Go for s
 - **Graceful Shutdown**: Properly handles SIGTERM and SIGINT signals
 - **Configurable**: JSON-based configuration for easy setup
 - **Batch Processing**: Optimized batch writes for better performance
+- **Metrics & Monitoring**: Built-in Prometheus metrics and health check endpoints
 
 ## Architecture
 
@@ -107,6 +108,11 @@ Create a `config.json` file with your source and sink settings:
 
 #### Pipeline Settings
 - `name`: Identifier for the pipeline
+- `metrics`: (Optional) Metrics and monitoring configuration
+  - `enabled`: Enable metrics endpoint (default: false)
+  - `port`: Port for metrics server (default: 2112)
+
+For detailed metrics information, see [METRICS.md](METRICS.md).
 
 #### MongoDB Source Settings
 - `uri`: MongoDB connection string
@@ -403,10 +409,10 @@ data-pipe/
 ## Roadmap
 
 - [x] MongoDB to PostgreSQL CDC
+- [x] Metrics and monitoring
 - [ ] Convex database source connector
 - [ ] ClickHouse sink connector
 - [ ] Custom data transformers
-- [ ] Metrics and monitoring
 - [ ] Multiple collection/table support
 - [ ] Schema evolution handling
 - [ ] State persistence and recovery

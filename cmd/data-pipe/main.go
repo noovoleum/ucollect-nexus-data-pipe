@@ -10,8 +10,10 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/IEatCodeDaily/data-pipe/pkg/config"
+	"github.com/IEatCodeDaily/data-pipe/pkg/metrics"
 	"github.com/IEatCodeDaily/data-pipe/pkg/pipeline"
 	"github.com/IEatCodeDaily/data-pipe/pkg/sink"
 	"github.com/IEatCodeDaily/data-pipe/pkg/source"
@@ -95,6 +97,33 @@ func main() {
 	// Create pipeline
 	pipe := pipeline.New(cfg.Pipeline.Name, src, snk, transformer, logger)
 
+	// Setup metrics if enabled
+	var metricsServer *metrics.Server
+	if cfg.Pipeline.Metrics.Enabled {
+		metricsPort := cfg.Pipeline.Metrics.Port
+		if metricsPort == 0 {
+			metricsPort = 2112 // Default Prometheus port
+		}
+		
+		// Create metrics recorder
+		metricsRecorder, err := metrics.NewMetrics(cfg.Pipeline.Name)
+		if err != nil {
+			logger.Fatalf("Failed to create metrics: %v", err)
+		}
+		pipe.SetMetrics(metricsRecorder)
+		
+		// Create health adapter
+		healthAdapter := &pipelineHealthAdapter{pipe: pipe}
+		
+		// Create and start metrics server
+		addr := fmt.Sprintf(":%d", metricsPort)
+		metricsServer = metrics.NewServer(addr, healthAdapter, logger)
+		if err := metricsServer.Start(); err != nil {
+			logger.Fatalf("Failed to start metrics server: %v", err)
+		}
+		logger.Printf("Metrics server started on %s", addr)
+	}
+
 	// Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -107,6 +136,15 @@ func main() {
 		<-sigChan
 		logger.Println("Received shutdown signal, stopping pipeline...")
 		cancel()
+		
+		// Shutdown metrics server if running
+		if metricsServer != nil {
+			shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer shutdownCancel()
+			if err := metricsServer.Shutdown(shutdownCtx); err != nil {
+				logger.Printf("Error shutting down metrics server: %v", err)
+			}
+		}
 	}()
 
 	// Handle initial sync if configured
@@ -247,4 +285,25 @@ func performInitialSync(ctx context.Context, cfg *config.Config, src pipeline.So
 
 	logger.Println("Initial sync completed successfully")
 	return nil
+}
+
+// pipelineHealthAdapter adapts pipeline.Pipeline to metrics.HealthChecker interface
+type pipelineHealthAdapter struct {
+	pipe *pipeline.Pipeline
+}
+
+func (a *pipelineHealthAdapter) IsHealthy() bool {
+	return a.pipe.IsHealthy()
+}
+
+func (a *pipelineHealthAdapter) GetStatus() metrics.HealthStatus {
+	status := a.pipe.GetStatus()
+	return metrics.HealthStatus{
+		Healthy:         status.Healthy,
+		PipelineRunning: status.PipelineRunning,
+		SourceConnected: status.SourceConnected,
+		SinkConnected:   status.SinkConnected,
+		LastEventTime:   status.LastEventTime,
+		UptimeSeconds:   status.UptimeSeconds,
+	}
 }
