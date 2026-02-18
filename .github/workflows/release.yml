@@ -46,8 +46,20 @@ jobs:
           # Remove 'v' prefix if present
           CURRENT=${CURRENT#v}
 
+          # Validate version format
+          if ! [[ "$CURRENT" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Invalid version format '$CURRENT'. Expected format: MAJOR.MINOR.PATCH"
+            exit 1
+          fi
+
           # Split version into components
           IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          # Validate that all components are numbers
+          if ! [[ "$MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$MINOR" =~ ^[0-9]+$ ]] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "Error: Version components must be numeric"
+            exit 1
+          fi
 
           # Bump version based on input
           case "${{ github.event.inputs.version_bump }}" in
@@ -69,18 +81,43 @@ jobs:
           echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "New version: $NEW_VERSION"
 
-      - name: Update go.mod version
-        run: |
-          NEW_VERSION="${{ steps.calc_version.outputs.new_version }}"
-          # Update module version in go.mod if needed
-          # For Go modules, version is typically managed through git tags
-          echo "Version will be: $NEW_VERSION"
-
       - name: Build and test
         run: |
           go mod download
           go build -v ./cmd/data-pipe
           go test -v ./...
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            # Version tags
+            type=semver,pattern={{version}},value=${{ steps.calc_version.outputs.new_version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.calc_version.outputs.new_version }}
+            # Major version tag (Note: For 0.x.x releases, this creates a '0' tag)
+            type=semver,pattern={{major}},value=${{ steps.calc_version.outputs.new_version }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Create Git tag
         run: |
@@ -117,34 +154,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for Docker
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            # Version tags
-            type=semver,pattern={{version}},value=${{ steps.calc_version.outputs.new_version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.calc_version.outputs.new_version }}
-            type=semver,pattern={{major}},value=${{ steps.calc_version.outputs.new_version }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
