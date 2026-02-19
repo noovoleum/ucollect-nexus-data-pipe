@@ -39,8 +39,8 @@ MongoDB Change Stream → Events → [Transformer] → PostgreSQL
 ### Build from Source
 
 ```bash
-git clone https://github.com/IEatCodeDaily/data-pipe.git
-cd data-pipe
+git clone https://github.com/noovoleum/ucollect-nexus-data-pipe.git
+cd ucollect-nexus-data-pipe
 go build -o data-pipe ./cmd/data-pipe
 ```
 
@@ -76,6 +76,58 @@ docker-compose down
 ```bash
 docker exec -it mongodb mongosh --eval "rs.initiate()"
 ```
+
+### Using Pre-built Docker Images
+
+Pre-built Docker images are automatically published to GitHub Container Registry (GHCR) on every push to the `main` and `develop` branches:
+
+```bash
+# Pull the latest stable version from main branch
+docker pull ghcr.io/noovoleum/ucollect-nexus-data-pipe:latest
+
+# Pull the development version from develop branch
+docker pull ghcr.io/noovoleum/ucollect-nexus-data-pipe:develop
+
+# Pull a specific release version
+docker pull ghcr.io/noovoleum/ucollect-nexus-data-pipe:v1.0.0
+
+# Run the container
+docker run -v $(pwd)/config.json:/root/config.json ghcr.io/noovoleum/ucollect-nexus-data-pipe:latest
+```
+
+## CI/CD and Releases
+
+This project uses GitHub Actions for automated builds and releases:
+
+### Automated Builds
+
+Every push to `main` or `develop` branches automatically:
+- Builds a Docker image
+- Pushes to GitHub Container Registry (ghcr.io)
+- Tags images appropriately:
+  - `main` branch → `latest` tag + branch-specific tags
+  - `develop` branch → `develop` tag + branch-specific tags
+  - All pushes include commit SHA tags for traceability
+
+### Creating Releases
+
+To create a new release:
+
+1. Go to the **Actions** tab in GitHub
+2. Select the **Release** workflow
+3. Click **Run workflow**
+4. Choose the version bump type:
+   - **patch**: Bug fixes (1.0.0 → 1.0.1)
+   - **minor**: New features (1.0.0 → 1.1.0)
+   - **major**: Breaking changes (1.0.0 → 2.0.0)
+
+The release workflow will:
+- Calculate the new version based on the latest git tag
+- Run tests to ensure code quality
+- Build and push Docker images with version tags to GHCR
+- Create a new git tag
+- Generate a changelog from commit messages
+- Create a GitHub release with the changelog
 
 ## Configuration
 
