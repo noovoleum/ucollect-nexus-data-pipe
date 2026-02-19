@@ -19,6 +19,9 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    concurrency:
+      group: release
+      cancel-in-progress: false
 
     steps:
       - name: Checkout code
@@ -104,10 +107,10 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             # Version tags
-            type=semver,pattern={{version}},value=${{ steps.calc_version.outputs.new_version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.calc_version.outputs.new_version }}
+            type=semver,pattern={{version}},prefix=v,value=${{ steps.calc_version.outputs.new_version }}
+            type=semver,pattern={{major}}.{{minor}},prefix=v,value=${{ steps.calc_version.outputs.new_version }}
             # Major version tag (Note: For 0.x.x releases, this creates a '0' tag)
-            type=semver,pattern={{major}},value=${{ steps.calc_version.outputs.new_version }}
+            type=semver,pattern={{major}},prefix=v,value=${{ steps.calc_version.outputs.new_version }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -131,7 +134,6 @@ jobs:
         id: changelog
         run: |
           CURRENT="${{ steps.get_version.outputs.current_version }}"
-          NEW_VERSION="${{ steps.calc_version.outputs.new_version }}"
 
           # Generate changelog from commits
           if [ "$CURRENT" = "v0.0.0" ]; then
