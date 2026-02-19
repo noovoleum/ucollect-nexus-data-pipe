@@ -124,10 +124,10 @@ To create a new release:
 The release workflow will:
 - Calculate the new version based on the latest git tag
 - Run tests to ensure code quality
+- Build and push Docker images with version tags to GHCR
 - Create a new git tag
 - Generate a changelog from commit messages
 - Create a GitHub release with the changelog
-- Build and push Docker images with version tags to GHCR
 
 ## Configuration
 
